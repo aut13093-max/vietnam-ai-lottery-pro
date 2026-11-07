@@ -4,14 +4,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 const LOTTERIES = [
-  { id: "XSMB", name: "XSMB 北部彩票", min: 0, max: 99 },
-  { id: "XSMN", name: "XSMN 南部彩票", min: 0, max: 99 },
-  { id: "XSMT", name: "XSMT 中部彩票", min: 0, max: 99 },
-  { id: "MEGA", name: "Vietlott Mega 6/45", min: 1, max: 45 },
-  { id: "POWER", name: "Vietlott Power 6/55", min: 1, max: 55 }
+  { id: "XSMB", name: "北部彩票", min: 0, max: 99 },
+  { id: "XSMN", name: "南部彩票", min: 0, max: 99 },
+  { id: "XSMT", name: "中部彩票", min: 0, max: 99 },
+  { id: "MEGA", name: "Mega 6/45", min: 1, max: 45 },
+  { id: "POWER", name: "Power 6/55", min: 1, max: 55 }
 ];
 
 const STORAGE_KEY = "vietnam_ai_lottery_pro_v1";
+const RESEARCH = ["热门号码", "冷门号码", "遗漏统计", "奇偶大小分析"];
 
 export default function Home() {
   const [selected, setSelected] = useState("XSMB");
@@ -22,7 +23,8 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [loaded, setLoaded] = useState(false);
 
-  const lottery = LOTTERIES.find((item) => item.id === selected);
+  const lottery = LOTTERIES.find(x => x.id === selected);
+  const currentDraws = draws[selected] || [];
 
   useEffect(() => {
     try {
@@ -36,65 +38,60 @@ export default function Home() {
 
   useEffect(() => {
     if (loaded) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(draws));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(draws));
+      } catch {
+        setMessage("本机保存失败，请检查浏览器存储设置");
+      }
     }
   }, [draws, loaded]);
-
-  const currentDraws = draws[selected] || [];
 
   const stats = useMemo(() => {
     const frequency = {};
     const lastSeen = {};
-
-    for (let i = 0; i <= 99; i++) {
-      frequency[i] = 0;
-    }
-
-    currentDraws.forEach((draw, index) => {
-      draw.numbers.forEach((number) => {
-        frequency[number]++;
-        if (lastSeen[number] === undefined) {
-          lastSeen[number] = index;
-        }
-      });
-    });
 
     const allNumbers = Array.from(
       { length: lottery.max - lottery.min + 1 },
       (_, i) => i + lottery.min
     );
 
+    allNumbers.forEach(n => frequency[n] = 0);
+
+    currentDraws.forEach((draw, index) => {
+      draw.numbers.forEach(n => {
+        frequency[n] = (frequency[n] || 0) + 1;
+        if (lastSeen[n] === undefined) lastSeen[n] = index;
+      });
+    });
+
     const sorted = [...allNumbers].sort(
       (a, b) => frequency[b] - frequency[a] || a - b
     );
 
-    const omission = allNumbers.map((number) => ({
-      number,
-      count:
-        lastSeen[number] === undefined
-          ? currentDraws.length
-          : lastSeen[number]
+    const omission = allNumbers.map(n => ({
+      number: n,
+      count: lastSeen[n] === undefined
+        ? currentDraws.length
+        : lastSeen[n]
     }));
 
-    const odd = allNumbers.filter((n) => n % 2 !== 0);
-    const even = allNumbers.filter((n) => n % 2 === 0);
-    const middle = (lottery.min + lottery.max) / 2;
-
-    const big = allNumbers.filter((n) => n > middle);
-    const small = allNumbers.filter((n) => n <= middle);
-
     return {
-      allNumbers,
       frequency,
-      hot: sorted.filter((n) => frequency[n] > 0).slice(0, 10),
+      hot: sorted.filter(n => frequency[n] > 0).slice(0, 10),
       cold: [...sorted].reverse().slice(0, 10),
-      omission: omission.sort((a, b) => b.count - a.count).slice(0, 10),
-      odd: odd.length,
-      even: even.length,
-      big: big.length,
-      small: small.length
+      omission: omission.sort((a, b) => b.count - a.count).slice(0, 10)
     };
   }, [currentDraws, lottery]);
+
+  function formatNumber(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function selectLottery(id) {
+    alert("JavaScript 按钮正常运行");
+    setSelected(id);
+    setMessage("");
+  }
 
   function addDraw(event) {
     event.preventDefault();
@@ -106,21 +103,21 @@ export default function Home() {
       .map(Number);
 
     if (numbers.length !== 6) {
-      setMessage("请准确输入6个号码，用空格或逗号分隔。");
+      setMessage("请输入准确的6个号码，用空格分隔。");
       return;
     }
 
-    if (
-      numbers.some(
-        (n) =>
-          !Number.isInteger(n) ||
-          n < lottery.min ||
-          n > lottery.max
-      )
-    ) {
-      setMessage(
-        `号码范围错误。${selected} 的范围是 ${lottery.min} 至 ${lottery.max}。`
-      );
+    if (numbers.some(n =>
+      !Number.isInteger(n) ||
+      n < lottery.min ||
+      n > lottery.max
+    )) {
+      setMessage(`号码范围错误：${lottery.min} 至 ${lottery.max}`);
+      return;
+    }
+
+    if (new Set(numbers).size !== 6) {
+      setMessage("6个号码不能重复。");
       return;
     }
 
@@ -130,9 +127,9 @@ export default function Home() {
       numbers
     };
 
-    setDraws((previous) => ({
-      ...previous,
-      [selected]: [newDraw, ...(previous[selected] || [])]
+    setDraws(prev => ({
+      ...prev,
+      [selected]: [newDraw, ...(prev[selected] || [])]
     }));
 
     setNumbersInput("");
@@ -140,101 +137,88 @@ export default function Home() {
   }
 
   function deleteDraw(id) {
-    if (!window.confirm("确定删除这条开奖记录吗？")) return;
+    if (!window.confirm("确定删除这条记录吗？")) return;
 
-    setDraws((previous) => ({
-      ...previous,
-      [selected]: (previous[selected] || []).filter(
-        (draw) => draw.id !== id
-      )
+    setDraws(prev => ({
+      ...prev,
+      [selected]: prev[selected].filter(d => d.id !== id)
     }));
   }
 
   function clearCurrent() {
-    if (!window.confirm("确定删除当前彩票的全部历史数据吗？")) return;
+    if (!window.confirm("确定清空当前彩票全部记录吗？")) return;
 
-    setDraws((previous) => ({
-      ...previous,
+    setDraws(prev => ({
+      ...prev,
       [selected]: []
     }));
-    setMessage("当前彩票历史数据已清空。");
+
+    setMessage("当前彩票记录已清空。");
   }
 
-  function formatNumber(number) {
-    return String(number).padStart(2, "0");
-  }
-
-  const panelStyle = {
-    background: "#ffffff",
+  const panel = {
+    background: "#fff",
     border: "1px solid #e1e7ef",
-    borderRadius: "12px",
-    padding: "16px",
-    marginBottom: "16px"
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16
   };
 
-  const buttonStyle = {
-    padding: "10px 14px",
-    borderRadius: "8px",
+  const button = {
+    padding: "12px 10px",
+    borderRadius: 8,
     border: "1px solid #d5dce6",
-    background: "#ffffff",
+    background: "#fff",
     cursor: "pointer",
-    fontWeight: "bold"
+    fontWeight: "bold",
+    touchAction: "manipulation"
   };
 
   return (
     <main style={{
       minHeight: "100vh",
+      padding: 16,
       background: "#f3f6fb",
       color: "#172033",
-      padding: "18px",
       fontFamily: "Arial, sans-serif"
     }}>
-      <div style={{ maxWidth: "1000px", margin: "auto" }}>
+      <div style={{ maxWidth: 1000, margin: "auto" }}>
 
         <header style={{
           background: "#10233f",
-          color: "white",
-          borderRadius: "14px",
-          padding: "24px 18px",
-          marginBottom: "18px"
+          color: "#fff",
+          padding: 22,
+          borderRadius: 14,
+          marginBottom: 16
         }}>
-          <div style={{ color: "#69d6ff", fontSize: "12px" }}>
+          <div style={{ color: "#69d6ff" }}>
             AI STATISTICS PLATFORM
           </div>
-          <h1 style={{ margin: "8px 0", fontSize: "25px" }}>
-            VIETNAM AI LOTTERY PRO
-          </h1>
-          <p style={{ margin: 0, color: "#d5e1f2" }}>
-            越南全类型彩票数据统计与研究平台
-          </p>
-          <div style={{ marginTop: "12px", fontSize: "12px" }}>
-            VERSION 1.1 · LOCAL DATA ANALYSIS
-          </div>
+          <h1>VIETNAM AI LOTTERY PRO</h1>
+          <p>越南全类型彩票数据统计与研究平台</p>
+          <small>VERSION 1.2 · INTERACTION TEST</small>
         </header>
 
-        <section style={panelStyle}>
+        <section style={panel}>
           <h3>选择彩票类型</h3>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))",
-            gap: "8px"
+            gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+            gap: 8
           }}>
-            {LOTTERIES.map((item) => (
+            {LOTTERIES.map(item => (
               <button
                 key={item.id}
-                onClick={() => {
-                  setSelected(item.id);
-                  setMessage("");
-                }}
+                type="button"
+                onClick={() => selectLottery(item.id)}
                 style={{
-                  ...buttonStyle,
+                  ...button,
                   background: selected === item.id ? "#174ea6" : "#fff",
-                  color: selected === item.id ? "#fff" : "#172033",
-                  borderColor: selected === item.id ? "#174ea6" : "#d5dce6"
+                  color: selected === item.id ? "#fff" : "#172033"
                 }}
               >
                 {item.id}
-                <div style={{ fontSize: "11px", marginTop: "5px" }}>
+                <div style={{ fontSize: 12, marginTop: 5 }}>
                   {item.name}
                 </div>
               </button>
@@ -242,83 +226,73 @@ export default function Home() {
           </div>
         </section>
 
-        <section style={panelStyle}>
+        <section style={panel}>
           <h3>当前研究项目</h3>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))",
-            gap: "8px"
+            gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+            gap: 8
           }}>
-            {["热门号码", "冷门号码", "遗漏统计", "奇偶大小分析"].map(
-              (item) => (
-                <button
-                  key={item}
-                  onClick={() => setResearch(item)}
-                  style={{
-                    ...buttonStyle,
-                    background: research === item ? "#087f5b" : "#fff",
-                    color: research === item ? "#fff" : "#172033"
-                  }}
-                >
-                  {item}
-                </button>
-              )
-            )}
+            {RESEARCH.map(item => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setResearch(item)}
+                style={{
+                  ...button,
+                  background: research === item ? "#087f5b" : "#fff",
+                  color: research === item ? "#fff" : "#172033"
+                }}
+              >
+                {item}
+              </button>
+            ))}
           </div>
         </section>
 
-        <section style={panelStyle}>
+        <section style={panel}>
           <h3>当前彩票：{selected}</h3>
           <p>研究项目：{research}</p>
           <p>已录入开奖期数：{currentDraws.length}</p>
           <p>号码范围：{formatNumber(lottery.min)} - {formatNumber(lottery.max)}</p>
         </section>
 
-        <section style={panelStyle}>
-          <h3>录入真实历史开奖数据</h3>
+        <section style={panel}>
+          <h3>录入历史开奖数据</h3>
           <form onSubmit={addDraw}>
-            <label style={{ display: "block", marginBottom: "6px" }}>
-              开奖日期
-            </label>
+            <label>开奖日期</label>
             <input
               type="date"
               value={drawDate}
-              onChange={(e) => setDrawDate(e.target.value)}
+              onChange={e => setDrawDate(e.target.value)}
               style={{
                 width: "100%",
-                padding: "12px",
-                border: "1px solid #ccd4df",
-                borderRadius: "8px",
-                marginBottom: "12px"
+                padding: 12,
+                margin: "8px 0 14px",
+                boxSizing: "border-box"
               }}
             />
 
-            <label style={{ display: "block", marginBottom: "6px" }}>
-              输入6个号码
-            </label>
+            <label>输入6个号码</label>
             <input
               type="text"
               value={numbersInput}
-              onChange={(e) => setNumbersInput(e.target.value)}
-              placeholder="例如：03 12 18 25 36 44"
+              onChange={e => setNumbersInput(e.target.value)}
+              placeholder="03 12 18 25 36 44"
               style={{
                 width: "100%",
-                padding: "12px",
-                border: "1px solid #ccd4df",
-                borderRadius: "8px",
-                marginBottom: "12px"
+                padding: 12,
+                margin: "8px 0 14px",
+                boxSizing: "border-box"
               }}
             />
 
-            <button
-              type="submit"
-              style={{
-                ...buttonStyle,
-                background: "#174ea6",
-                color: "white",
-                width: "100%"
-              }}
-            >
+            <button type="submit" style={{
+              ...button,
+              width: "100%",
+              background: "#174ea6",
+              color: "#fff"
+            }}>
               保存开奖数据
             </button>
           </form>
@@ -329,160 +303,120 @@ export default function Home() {
             </p>
           )}
 
-          <p style={{ fontSize: "12px", color: "#68758a" }}>
-            当前版本每期开奖录入6个号码，用于基础统计测试。
-            XSMB、XSMN、XSMT 的完整奖项结构尚未接入。
-          </p>
+          <small>
+            当前版本每期开奖录入6个号码，仅用于基础统计测试。
+            越南传统彩票完整奖项结构尚未接入。
+          </small>
         </section>
 
-        <section style={panelStyle}>
+        <section style={panel}>
           <h3>{research}</h3>
 
           {currentDraws.length === 0 ? (
-            <p style={{ color: "#68758a" }}>
-              等待导入真实历史开奖数据。请先录入开奖记录。
-            </p>
+            <p>等待导入历史开奖数据，请先录入开奖记录。</p>
           ) : (
             <>
-              {research === "热门号码" && (
-                <div>
-                  <p>出现次数最多的前10个号码：</p>
-                  {stats.hot.map((n) => (
-                    <span key={n} style={{
-                      display: "inline-block",
-                      background: "#e3f2fd",
-                      color: "#174ea6",
-                      borderRadius: "50%",
-                      padding: "12px",
-                      margin: "5px",
-                      fontWeight: "bold"
-                    }}>
-                      {formatNumber(n)} ({stats.frequency[n]})
-                    </span>
-                  ))}
-                </div>
-              )}
+              {research === "热门号码" && stats.hot.map(n => (
+                <span key={n} style={{
+                  display: "inline-block",
+                  padding: 12,
+                  margin: 5,
+                  borderRadius: "50%",
+                  background: "#e3f2fd",
+                  color: "#174ea6"
+                }}>
+                  {formatNumber(n)} ({stats.frequency[n]})
+                </span>
+              ))}
 
-              {research === "冷门号码" && (
-                <div>
-                  <p>出现次数较少的前10个号码：</p>
-                  {stats.cold.map((n) => (
-                    <span key={n} style={{
-                      display: "inline-block",
-                      background: "#fff0e6",
-                      color: "#b45309",
-                      borderRadius: "50%",
-                      padding: "12px",
-                      margin: "5px",
-                      fontWeight: "bold"
-                    }}>
-                      {formatNumber(n)} ({stats.frequency[n]})
-                    </span>
-                  ))}
-                </div>
-              )}
+              {research === "冷门号码" && stats.cold.map(n => (
+                <span key={n} style={{
+                  display: "inline-block",
+                  padding: 12,
+                  margin: 5,
+                  borderRadius: "50%",
+                  background: "#fff0e6",
+                  color: "#b45309"
+                }}>
+                  {formatNumber(n)} ({stats.frequency[n]})
+                </span>
+              ))}
 
               {research === "遗漏统计" && (
-                <div style={{ overflowX: "auto" }}>
-                  <p>距离最近一次出现的开奖期数：</p>
-                  <table style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    textAlign: "center"
-                  }}>
-                    <thead>
-                      <tr>
-                        <th style={{ padding: "9px", background: "#edf1f7" }}>
-                          号码
-                        </th>
-                        <th style={{ padding: "9px", background: "#edf1f7" }}>
-                          遗漏期数
-                        </th>
+                <table style={{
+                  width: "100%",
+                  textAlign: "center",
+                  borderCollapse: "collapse"
+                }}>
+                  <thead>
+                    <tr>
+                      <th>号码</th>
+                      <th>遗漏期数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.omission.map(item => (
+                      <tr key={item.number}>
+                        <td>{formatNumber(item.number)}</td>
+                        <td>{item.count}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {stats.omission.map((item) => (
-                        <tr key={item.number}>
-                          <td style={{ padding: "8px", borderBottom: "1px solid #eee" }}>
-                            {formatNumber(item.number)}
-                          </td>
-                          <td style={{ padding: "8px", borderBottom: "1px solid #eee" }}>
-                            {item.count}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               )}
 
-              {research === "奇偶大小分析" && (
-                <div>
-                  <p>号码范围内的分类数量：</p>
-                  <p>奇数：{stats.odd}</p>
-                  <p>偶数：{stats.even}</p>
-                  <p>大数：{stats.big}</p>
-                  <p>小数：{stats.small}</p>
-                  <hr />
-                  <p>当前历史数据总号码数：{
-                    currentDraws.reduce(
-                      (sum, draw) => sum + draw.numbers.length, 0
-                    )
-                  }</p>
-                  <p>历史奇数出现次数：{
-                    currentDraws.reduce(
-                      (sum, draw) =>
-                        sum + draw.numbers.filter((n) => n % 2 !== 0).length,
-                      0
-                    )
-                  }</p>
-                  <p>历史偶数出现次数：{
-                    currentDraws.reduce(
-                      (sum, draw) =>
-                        sum + draw.numbers.filter((n) => n % 2 === 0).length,
-                      0
-                    )
-                  }</p>
-                </div>
-              )}
+              {research === "奇偶大小分析" && (() => {
+                const nums = currentDraws.flatMap(d => d.numbers);
+                const odd = nums.filter(n => n % 2 !== 0).length;
+                const even = nums.length - odd;
+                const middle = (lottery.min + lottery.max) / 2;
+                const big = nums.filter(n => n > middle).length;
+                const small = nums.length - big;
+
+                return (
+                  <div>
+                    <p>历史号码总数：{nums.length}</p>
+                    <p>奇数出现次数：{odd}</p>
+                    <p>偶数出现次数：{even}</p>
+                    <p>大数出现次数：{big}</p>
+                    <p>小数出现次数：{small}</p>
+                  </div>
+                );
+              })()}
             </>
           )}
         </section>
 
-        <section style={panelStyle}>
+        <section style={panel}>
           <h3>历史开奖记录</h3>
 
           {currentDraws.length === 0 ? (
             <p>暂无历史记录。</p>
           ) : (
-            currentDraws.map((draw) => (
+            currentDraws.map(draw => (
               <div key={draw.id} style={{
-                borderBottom: "1px solid #e5e9f0",
-                padding: "12px 0"
+                padding: "12px 0",
+                borderBottom: "1px solid #eee"
               }}>
                 <strong>{draw.date}</strong>
                 <div style={{ margin: "8px 0" }}>
-                  {draw.numbers.map((n, index) => (
-                    <span key={index} style={{
+                  {draw.numbers.map((n, i) => (
+                    <span key={i} style={{
                       display: "inline-block",
-                      background: "#edf3ff",
-                      color: "#174ea6",
+                      padding: 9,
+                      margin: 3,
                       borderRadius: "50%",
-                      padding: "9px",
-                      margin: "3px",
-                      fontWeight: "bold"
+                      background: "#edf3ff",
+                      color: "#174ea6"
                     }}>
                       {formatNumber(n)}
                     </span>
                   ))}
                 </div>
                 <button
+                  type="button"
                   onClick={() => deleteDraw(draw.id)}
-                  style={{
-                    ...buttonStyle,
-                    color: "#b42318",
-                    fontSize: "12px"
-                  }}
+                  style={button}
                 >
                   删除记录
                 </button>
@@ -492,11 +426,12 @@ export default function Home() {
 
           {currentDraws.length > 0 && (
             <button
+              type="button"
               onClick={clearCurrent}
               style={{
-                ...buttonStyle,
+                ...button,
                 color: "#b42318",
-                marginTop: "14px"
+                marginTop: 12
               }}
             >
               清空当前彩票数据
@@ -505,28 +440,25 @@ export default function Home() {
         </section>
 
         <section style={{
-          background: "#fff8e7",
-          border: "1px solid #f0dca8",
-          borderRadius: "12px",
-          padding: "16px",
-          marginBottom: "20px"
+          ...panel,
+          background: "#fff8e7"
         }}>
           <strong>AI研究说明</strong>
-          <p style={{ fontSize: "13px", lineHeight: "1.7" }}>
-            本版本根据用户录入的历史数据进行频率、遗漏和组合基础统计。
-            数据保存在当前设备浏览器中，不会自动同步到其他设备。
+          <p>
+            本版本根据手动录入的数据进行频率、遗漏和奇偶大小统计。
+            数据保存在当前设备浏览器，不会自动同步。
             历史频率不代表下一期中奖概率提高，也不能保证中奖。
           </p>
         </section>
 
         <footer style={{
           textAlign: "center",
-          color: "#68758a",
-          fontSize: "12px",
-          padding: "12px"
+          padding: 12,
+          color: "#68758a"
         }}>
-          VIETNAM AI LOTTERY PRO V1.1
+          VIETNAM AI LOTTERY PRO V1.2
         </footer>
+
       </div>
     </main>
   );
